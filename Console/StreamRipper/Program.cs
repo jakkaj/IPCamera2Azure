@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using ExtensionGoo.Standard.Extensions;
 
 namespace StreamRipper
@@ -12,6 +13,7 @@ namespace StreamRipper
             if (args.Length == 0)
             {
                 Console.WriteLine("Please pass in camera name and address");
+                return;
             }
 
             var name = args[0];
@@ -34,18 +36,25 @@ namespace StreamRipper
                 var fn = Path.Combine(Directory.GetCurrentDirectory(), DateTime.UtcNow.Ticks + ".mp4");
 
                 var arguments =
-                    $"-y -i {address} -t 60 -r 3 -c:v libx264 -b 50000 -pix_fmt yuv420p -f mp4 \"{fn}\"";;
-
-                // var arguments =
-                //"-y -i http://admin@10.0.0.140:99/videostream.asf?user=admin&pwd=&resolution=64 -t 15 -r 3 -c:v libx264 -b 50000 -pix_fmt yuv420p -f mp4 \"" +
-                //fn + "\"";
+                    $"-y -i {address} -t 600 -r 3 -c:v libx264 -b 50000 -pix_fmt yuv420p -f mp4 \"{fn}\"";
 
                 pi.Arguments = arguments;
                 pi.WorkingDirectory = Directory.GetCurrentDirectory();
                 pi.UseShellExecute = false;
                 var process = Process.Start(pi);
 
-                process.WaitForExit();
+                process.WaitForExit((int)TimeSpan.FromSeconds(620).TotalMilliseconds);
+
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                }
+
+                if (!File.Exists(fn))
+                {
+                    Thread.Sleep(5000);
+                    continue;
+                }
 
                 var data = File.ReadAllBytes(fn);
 

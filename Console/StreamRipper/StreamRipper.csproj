@@ -9,5 +9,7 @@
     <PackageReference Include="extensiongoo" Version="0.0.8" />
     <PackageReference Include="newtonsoft.json" Version="9.0.1" />
   </ItemGroup>
-
+  <PropertyGroup>
+    <RuntimeIdentifiers>win10-x64</RuntimeIdentifiers>
+  </PropertyGroup>
 </Project>
