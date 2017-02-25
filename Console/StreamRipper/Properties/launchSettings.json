@@ -2,7 +2,7 @@
   "profiles": {
     "StreamRipper": {
       "commandName": "Project",
-      "commandLineArgs": "Back \"http://admin@10.0.0.140:99/videostream.asf?user=admin&pwd=&resolution=64\""
+      "commandLineArgs": "Test \"http://admin@10.0.0.140:99/videostream.asf?user=admin&pwd=&resolution=64\""
     }
   }
 }
