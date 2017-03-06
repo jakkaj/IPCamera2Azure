@@ -36,12 +36,14 @@ namespace StreamRipper
 
                 var fn = Path.GetTempFileName();
 
+                
                 var arguments =
-                    $"-y -i {address}  -t 15  -r 3 -vf drawtext=\"fontfile=C\\\\:/Windows/Fonts/arial.ttf:text='%{{localtime\\:%X}}:fontcolor=yellow'\" -c:v libx264 -b 50000 -pix_fmt yuv420p -f mp4 \"{fn}\"";
+                    $"-y -i {address}  -t 300  -r 3 -vf drawtext=\"fontfile=C\\\\:/Windows/Fonts/arial.ttf:text='%{{localtime\\:%X}}:fontcolor=yellow'\" -c:v libx264 -b 50000 -pix_fmt yuv420p -f mp4 \"{fn}\"";
 
                 pi.Arguments = arguments;
                 pi.WorkingDirectory = Directory.GetCurrentDirectory();
                 pi.UseShellExecute = false;
+
                 var process = Process.Start(pi);
 
                 process.WaitForExit((int)TimeSpan.FromSeconds(320).TotalMilliseconds);
@@ -63,6 +65,7 @@ namespace StreamRipper
                 var data = File.ReadAllBytes(fn);
 
                 func.Post(data).Wait();
+
 
                 File.Delete(fn);
             }
