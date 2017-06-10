@@ -13,6 +13,7 @@ using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
 using Emgu.CV.Util;
 using Emgu.CV.VideoSurveillance;
+using ExtensionGoo.Standard.Extensions;
 
 namespace MotionDetector
 {
@@ -51,13 +52,13 @@ namespace MotionDetector
             {
                 foreach (var f in Directory.GetFiles(fn))
                 {
-                  // File.Delete(f);
+                   File.Delete(f);
                 }
             }
 
             Task.Run(async () =>
             {
-              //  await _processor(address, fn);
+                await _processor(address, fn);
             });
 
             _watcher(name, fn).GetAwaiter().GetResult();
@@ -73,15 +74,15 @@ namespace MotionDetector
 
         }
 
-        static Task _watcher(string name, string fn)
+        static async Task _watcher(string name, string fn)
         {
             
             var codeFiles = @"C:\Users\jakka\Documents\code.txt";
 
             var code = File.ReadAllText(codeFiles);
-
             var func =
-                $"https://jordocore.azurewebsites.net/api/VideoUpload?code={code}&SourceName={name}";
+                $"https://jordocore.azurewebsites.net/api/MovementUploader?code={code}&SourceName={name}";
+
 
             var d = new DirectoryInfo(fn);
 
@@ -89,14 +90,26 @@ namespace MotionDetector
 
             while (true)
             {
+                
                 var files = d.GetFiles("*.bmp").OrderBy(_ => _.Name);
 
                 foreach (var f in files)
                 {
-                    _doDetect(f.FullName);
-                    Thread.Sleep(500);
-                    //f.Delete();
+                    if (_doDetect(f.FullName))
+                    {
+                        using (var imgFull = new Image<Bgr, Byte>(f.FullName))
+                        {
+                            var upl = imgFull.ToJpegData(65);
+                            await func.Post(upl);
+                            Console.WriteLine($">>>> Sent {DateTime.Now.ToString()}");
+                        }
+
+                    }
+                    
+                    f.Delete();
                 }
+
+                await Task.Delay(5000);
             }
 
             //var data = File.ReadAllBytes(fn);
@@ -110,9 +123,9 @@ namespace MotionDetector
 
         static private Image<Gray, Byte> _original = null;
 
-        static void _doDetect(string fileName)
+        static bool _doDetect(string fileName)
         {
-
+            
             Debug.WriteLine($"Processing: {fileName}");
 
             using (Image<Bgr, Byte> frameOrig = new Image<Bgr, Byte>(fileName))
@@ -127,17 +140,45 @@ namespace MotionDetector
                 if (_original == null)
                 {
                     _original = smoothedImage;
-                    return;
+                    return false;
                 }
 
                 var frameDelta = smoothedImage.AbsDiff(_original);
                 var thresh = frameDelta.ThresholdBinary(new Gray(25), new Gray(255));
                 thresh = thresh.Dilate(2);
 
-                File.WriteAllBytes(@"C:\Temp\imagery\aathreh.jpg", thresh.ToJpegData(95));
+                //File.WriteAllBytes(@"C:\Temp\imagery\aathreh.jpg", thresh.ToJpegData(95));
 
                 _original = smoothedImage;
+                
+                //var cnts = new VectorOfVectorOfPoint();
+                //CvInvoke.FindContours(thresh.Copy(), cnts, null, RetrType.External,
+                //    ChainApproxMethod.ChainApproxSimple);
 
+                //var goer = false;
+
+                //for (var i = 0; i < cnts.Size; i++)
+                //{
+                //    var c = cnts[i];
+
+                //    if (CvInvoke.ContourArea(c) < 500)
+                //    {
+                //        continue;
+                //    }
+                //    goer = true;
+
+
+                //    //Debug.WriteLine(CvInvoke.ContourArea(c));
+                //    //var rect = CvInvoke.BoundingRectangle(c);
+                //    //CvInvoke.Rectangle(frame, rect, new MCvScalar(255.0, 255.0, 255.0), 2);
+                //}
+
+                ////// File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
+
+                // return goer;
+
+                //Mat forgroundMask = new Mat();
+                //_fgDetector.Apply(smoothedFrame, forgroundMask);
 
                 CvBlobs blobs = new CvBlobs();
                 _blobDetector.Detect(thresh, blobs);
@@ -145,7 +186,7 @@ namespace MotionDetector
 
                 float scale = (frame.Width + frame.Width) / 2.0f;
 
-                File.WriteAllBytes(@"C:\Temp\imagery\aaout.jpg", smoothedImage.ToJpegData(95));
+                //File.WriteAllBytes(@"C:\Temp\imagery\aaout.jpg", smoothedImage.ToJpegData(95));
 
 
                 _tracker.Update(blobs, scale, 5, 5);
@@ -157,10 +198,10 @@ namespace MotionDetector
                     CvInvoke.PutText(frame, b.Id.ToString(), new Point((int)Math.Round(b.Centroid.X), (int)Math.Round(b.Centroid.Y)), FontFace.HersheyPlain, 1.0, new MCvScalar(255.0, 255.0, 255.0));
                 }
 
-                File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
-                File.WriteAllBytes(@"C:\Temp\imagery\aablur.jpg", smoothedFrame.ToImage<Gray, byte>().ToJpegData(95));
+               File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
+               // File.WriteAllBytes(@"C:\Temp\imagery\aablur.jpg", smoothedFrame.ToImage<Gray, byte>().ToJpegData(95));
 
-
+                return _tracker.Count > 0;
                 //var cnts = new VectorOfVectorOfPoint();
                 //CvInvoke.FindContours(thresh.Copy(), cnts, null, RetrType.External,
                 //    ChainApproxMethod.ChainApproxSimple);
@@ -180,17 +221,15 @@ namespace MotionDetector
 
 
 
-                return;
-
 
                 //Mat smoothedFrame = new Mat();
                 //CvInvoke.GaussianBlur(frame, smoothedFrame, new Size(23, 23), 5); //filter out noises
                 ////frame._SmoothGaussian(3); 
 
-                
+
                 //Mat forgroundMask = new Mat();
                 //_fgDetector.Apply(smoothedFrame, forgroundMask);
-                
+
 
                 //CvBlobs blobs = new CvBlobs();
                 //_blobDetector.Detect(forgroundMask.ToImage<Gray, byte>(), blobs);
@@ -199,7 +238,7 @@ namespace MotionDetector
                 //float scale = (frame.Width + frame.Width) / 2.0f;
 
                 //File.WriteAllBytes(@"C:\Temp\imagery\aaout.jpg", forgroundMask.ToImage<Gray, byte>().ToJpegData(95));
-                
+
 
                 //_tracker.Update(blobs, scale, 5, 5);
 
@@ -245,8 +284,9 @@ namespace MotionDetector
 
                 pi.Arguments = arguments;
                 pi.WorkingDirectory = Directory.GetCurrentDirectory();
-                pi.UseShellExecute = false;
-
+                pi.UseShellExecute = true;
+              
+                
                 _process = Process.Start(pi);
 
                 _process.WaitForExit();
