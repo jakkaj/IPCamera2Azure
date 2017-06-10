@@ -11,6 +11,7 @@ using Emgu.CV;
 using Emgu.CV.Cvb;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
+using Emgu.CV.Util;
 using Emgu.CV.VideoSurveillance;
 
 namespace MotionDetector
@@ -32,7 +33,7 @@ namespace MotionDetector
             }
 
             AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
-
+            
             _fgDetector = new BackgroundSubtractorMOG2();
             _blobDetector = new CvBlobDetector();
             _tracker = new CvTracks();
@@ -50,13 +51,13 @@ namespace MotionDetector
             {
                 foreach (var f in Directory.GetFiles(fn))
                 {
-                   File.Delete(f);
+                  // File.Delete(f);
                 }
             }
 
             Task.Run(async () =>
             {
-                await _processor(address, fn);
+              //  await _processor(address, fn);
             });
 
             _watcher(name, fn).GetAwaiter().GetResult();
@@ -84,6 +85,8 @@ namespace MotionDetector
 
             var d = new DirectoryInfo(fn);
 
+            
+
             while (true)
             {
                 var files = d.GetFiles("*.bmp").OrderBy(_ => _.Name);
@@ -92,7 +95,7 @@ namespace MotionDetector
                 {
                     _doDetect(f.FullName);
                     Thread.Sleep(500);
-                    f.Delete();
+                    //f.Delete();
                 }
             }
 
@@ -104,31 +107,46 @@ namespace MotionDetector
             //File.Delete(fn);
 
         }
+
+        static private Image<Gray, Byte> _original = null;
+
         static void _doDetect(string fileName)
         {
 
             Debug.WriteLine($"Processing: {fileName}");
 
-            using (Image<Bgr, Byte> frame = new Image<Bgr, Byte>(fileName))
+            using (Image<Bgr, Byte> frameOrig = new Image<Bgr, Byte>(fileName))
             {
-                
-                Mat smoothedFrame = new Mat();
-                CvInvoke.GaussianBlur(frame, smoothedFrame, new Size(23, 23), 5); //filter out noises
-                //frame._SmoothGaussian(3); 
+                var frame = frameOrig.Convert<Gray, Byte>();
 
-                
-                Mat forgroundMask = new Mat();
-                _fgDetector.Apply(smoothedFrame, forgroundMask);
-                
+                Mat smoothedFrame = new Mat();
+                CvInvoke.GaussianBlur(frame, smoothedFrame, new Size(19, 19), 7); //filter out noises
+
+                var smoothedImage = smoothedFrame.ToImage<Gray, Byte>();
+
+                if (_original == null)
+                {
+                    _original = smoothedImage;
+                    return;
+                }
+
+                var frameDelta = smoothedImage.AbsDiff(_original);
+                var thresh = frameDelta.ThresholdBinary(new Gray(25), new Gray(255));
+                thresh = thresh.Dilate(2);
+
+                File.WriteAllBytes(@"C:\Temp\imagery\aathreh.jpg", thresh.ToJpegData(95));
+
+                _original = smoothedImage;
+
 
                 CvBlobs blobs = new CvBlobs();
-                _blobDetector.Detect(forgroundMask.ToImage<Gray, byte>(), blobs);
-                blobs.FilterByArea(100, int.MaxValue);
+                _blobDetector.Detect(thresh, blobs);
+                blobs.FilterByArea(800, int.MaxValue);
 
                 float scale = (frame.Width + frame.Width) / 2.0f;
 
-                File.WriteAllBytes(@"C:\Temp\imagery\aaout.jpg", forgroundMask.ToImage<Gray, byte>().ToJpegData(95));
-                
+                File.WriteAllBytes(@"C:\Temp\imagery\aaout.jpg", smoothedImage.ToJpegData(95));
+
 
                 _tracker.Update(blobs, scale, 5, 5);
 
@@ -142,7 +160,60 @@ namespace MotionDetector
                 File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
                 File.WriteAllBytes(@"C:\Temp\imagery\aablur.jpg", smoothedFrame.ToImage<Gray, byte>().ToJpegData(95));
 
-                Console.WriteLine($" >>>> Tracker: {_tracker.Count}, Blobs: {blobs.Count}");
+
+                //var cnts = new VectorOfVectorOfPoint();
+                //CvInvoke.FindContours(thresh.Copy(), cnts, null, RetrType.External,
+                //    ChainApproxMethod.ChainApproxSimple);
+
+
+
+                //for (var i = 0; i < cnts.Size; i++)
+                //{
+                //    var c = cnts[i];
+                //    Debug.WriteLine(CvInvoke.ContourArea(c));
+                //    var rect = CvInvoke.BoundingRectangle(c);
+                //    CvInvoke.Rectangle(frame, b.BoundingBox, new MCvScalar(255.0, 255.0, 255.0), 2);
+
+
+                //}
+
+
+
+
+                return;
+
+
+                //Mat smoothedFrame = new Mat();
+                //CvInvoke.GaussianBlur(frame, smoothedFrame, new Size(23, 23), 5); //filter out noises
+                ////frame._SmoothGaussian(3); 
+
+                
+                //Mat forgroundMask = new Mat();
+                //_fgDetector.Apply(smoothedFrame, forgroundMask);
+                
+
+                //CvBlobs blobs = new CvBlobs();
+                //_blobDetector.Detect(forgroundMask.ToImage<Gray, byte>(), blobs);
+                //blobs.FilterByArea(100, int.MaxValue);
+
+                //float scale = (frame.Width + frame.Width) / 2.0f;
+
+                //File.WriteAllBytes(@"C:\Temp\imagery\aaout.jpg", forgroundMask.ToImage<Gray, byte>().ToJpegData(95));
+                
+
+                //_tracker.Update(blobs, scale, 5, 5);
+
+                //foreach (var pair in _tracker)
+                //{
+                //    CvTrack b = pair.Value;
+                //    CvInvoke.Rectangle(frame, b.BoundingBox, new MCvScalar(255.0, 255.0, 255.0), 2);
+                //    CvInvoke.PutText(frame, b.Id.ToString(), new Point((int)Math.Round(b.Centroid.X), (int)Math.Round(b.Centroid.Y)), FontFace.HersheyPlain, 1.0, new MCvScalar(255.0, 255.0, 255.0));
+                //}
+
+                //File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
+                //File.WriteAllBytes(@"C:\Temp\imagery\aablur.jpg", smoothedFrame.ToImage<Gray, byte>().ToJpegData(95));
+
+                //Console.WriteLine($" >>>> Tracker: {_tracker.Count}, Blobs: {blobs.Count}");
             }
 
 
