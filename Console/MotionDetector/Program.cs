@@ -128,7 +128,7 @@ namespace MotionDetector
                         Debug.WriteLine($"Movement was {_movementWindow.TotalSeconds} ago");
                     }
 
-                    if (isTriggered && _movementWindow > TimeSpan.FromSeconds(11))
+                    if (isTriggered && _movementWindow > TimeSpan.FromSeconds(31))
                     {
                         //movement is now old, collect and transmit the movement.  
                         await _buildAndTransmit();
@@ -179,7 +179,7 @@ namespace MotionDetector
             pi.FileName = ff;
 
             var arguments =
-                $"-y -framerate 2/1 -i img%05d.jpg -r 2 video.mp4";
+                $"-y -framerate 1/1 -i img%05d.jpg -c:v libx264 -vf \"fps=5,format=yuv420p\" video.mp4";
 
             pi.Arguments = arguments;
             pi.WorkingDirectory = stageDirectory.FullName;
@@ -241,7 +241,7 @@ namespace MotionDetector
                 return false;
             }
 
-            return DateTime.Now.Subtract(_lastMovement.Value) < TimeSpan.FromSeconds(10);
+            return DateTime.Now.Subtract(_lastMovement.Value) < TimeSpan.FromSeconds(30);
         }
 
         static void _trimOld(DirectoryInfo dir)
@@ -255,7 +255,7 @@ namespace MotionDetector
             {
                 var fn = file.Name.Replace(file.Extension, "");
                 var dt = new DateTime(Convert.ToInt64(fn));
-                if (dtNow.Subtract(dt) > TimeSpan.FromSeconds(10))
+                if (dtNow.Subtract(dt) > TimeSpan.FromSeconds(30))
                 {
                     file.Delete();
                 }
