@@ -13,6 +13,7 @@ using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
 using Emgu.CV.Util;
 using Emgu.CV.VideoSurveillance;
+using ExifLib;
 using ExtensionGoo.Standard.Extensions;
 
 namespace MotionDetector
@@ -25,6 +26,11 @@ namespace MotionDetector
 
         private static Process _process;
 
+        private static DateTime? _lastMovement;
+
+        const string ff = @"C:\utils\ffmpeg-20170223-dcd3418-win64-static\ffmpeg-20170223-dcd3418-win64-static\bin\ffmpeg.exe";
+        private static string _code = null;
+        private static string _name = null;
         static void Main(string[] args)
         {
             if (args.Length == 0)
@@ -33,13 +39,18 @@ namespace MotionDetector
                 return;
             }
 
+            var codeFiles = @"C:\Users\jakka\Documents\code.txt";
+
+            _code = File.ReadAllText(codeFiles);
+
+
             AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
             
             _fgDetector = new BackgroundSubtractorMOG2();
             _blobDetector = new CvBlobDetector();
             _tracker = new CvTracks();
 
-            var name = args[0];
+            _name = args[0];
             var address = args[1];
 
             var fn = Path.Combine(Path.GetTempPath(), "survel");
@@ -50,10 +61,10 @@ namespace MotionDetector
             }
             else
             {
-                foreach (var f in Directory.GetFiles(fn))
-                {
-                   File.Delete(f);
-                }
+                //foreach (var f in Directory.GetFiles(fn))
+                //{
+                //   File.Delete(f);
+                //}
             }
 
             Task.Run(async () =>
@@ -61,7 +72,7 @@ namespace MotionDetector
                 await _processor(address, fn);
             });
 
-            _watcher(name, fn).GetAwaiter().GetResult();
+            _watcher(_name, fn).GetAwaiter().GetResult();
         }
 
         private static void CurrentDomain_ProcessExit(object sender, EventArgs e)
@@ -77,34 +88,55 @@ namespace MotionDetector
         static async Task _watcher(string name, string fn)
         {
             
-            var codeFiles = @"C:\Users\jakka\Documents\code.txt";
-
-            var code = File.ReadAllText(codeFiles);
-            var func =
-                $"https://jordocore.azurewebsites.net/api/MovementUploader?code={code}&SourceName={name}";
-
+            
 
             var d = new DirectoryInfo(fn);
 
-            
+            bool isTriggered = false;
 
             while (true)
             {
                 
-                var files = d.GetFiles("*.bmp").OrderBy(_ => _.Name);
+                var files = d.GetFiles("*.jpg").OrderBy(_ => _.Name);
 
                 foreach (var f in files)
                 {
                     if (_doDetect(f.FullName))
                     {
+                        isTriggered = true;
+                        _lastMovement = DateTime.Now;
+
+                        var datePictureTaken = File.GetCreationTime(f.FullName);
+                        
                         using (var imgFull = new Image<Bgr, Byte>(f.FullName))
                         {
                             var upl = imgFull.ToJpegData(65);
+
+                            var func =
+                                $"https://jordocore.azurewebsites.net/api/MovementUploader?code={_code}&SourceName={name}&Ext=jpg&Ticks={datePictureTaken.Ticks}";
+
                             await func.Post(upl);
                             Console.WriteLine($">>>> Sent {DateTime.Now.ToString()}");
                         }
-
                     }
+
+                    var _movementWindow = _lastMovement != null ?
+                        DateTime.Now.Subtract(_lastMovement.Value) : TimeSpan.Zero;
+
+                    if (isTriggered)
+                    {
+                        Debug.WriteLine($"Movement was {_movementWindow.TotalSeconds} ago");
+                    }
+
+                    if (isTriggered && _movementWindow > TimeSpan.FromSeconds(11))
+                    {
+                        //movement is now old, collect and transmit the movement.  
+                        await _buildAndTransmit();
+                        isTriggered = false;
+                    }
+
+
+                    _doScollingTimeWindow(f);
                     
                     f.Delete();
                 }
@@ -119,6 +151,115 @@ namespace MotionDetector
 
             //File.Delete(fn);
 
+        }
+
+        static async Task _buildAndTransmit()
+        {
+            var timeWindowDirecgtory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), "videoWindow"));
+            var stageDirectory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), "videoWindowStage"));
+
+            if (!stageDirectory.Exists)
+            {
+                stageDirectory.Create();
+            }
+
+            var count = 1;
+
+            foreach (var f in timeWindowDirecgtory.GetFiles())
+            {
+                var target = Path.Combine(stageDirectory.FullName,
+                    $"img{count:D5}.jpg");
+               
+                f.CopyTo(target, true);
+                count++;
+            }
+
+            var pi = new ProcessStartInfo();
+
+            pi.FileName = ff;
+
+            var arguments =
+                $"-y -framerate 2/1 -i img%05d.jpg -r 2 video.mp4";
+
+            pi.Arguments = arguments;
+            pi.WorkingDirectory = stageDirectory.FullName;
+            pi.UseShellExecute = true;
+
+            _process = Process.Start(pi);
+
+            _process.WaitForExit();
+
+            foreach (var fDelete in stageDirectory.GetFiles("*.jpg"))
+            {
+                fDelete.Delete();
+            }
+
+            var fVideo = Path.Combine(stageDirectory.FullName, "video.mp4");
+
+            if (!File.Exists(fVideo))
+            {
+                return;
+            }
+
+            var d = File.ReadAllBytes(fVideo);
+
+            var func =
+                $"https://jordocore.azurewebsites.net/api/MovementUploader?code={_code}&SourceName={_name}&Ext=mp4&Ticks={DateTime.Now.Ticks}";
+
+            await func.Post(d);
+
+            
+        }
+
+        static void _doScollingTimeWindow(FileInfo file)
+        {
+            var datePictureTaken = file.CreationTime;
+            var ticks = datePictureTaken.Ticks;
+            var ext = file.Extension;
+
+            var timeWindow = Path.Combine(Path.GetTempPath(), "videoWindow", $"{ticks}{ext}");
+
+            var newFile = new FileInfo(timeWindow);
+
+            if (!newFile.Directory.Exists)
+            {
+                newFile.Directory.Create();
+            }
+
+            file.CopyTo(newFile.FullName, true);
+
+            if (!_isMovementEventActive())
+            {
+                _trimOld(newFile.Directory);
+            }
+        }
+
+        static bool _isMovementEventActive()
+        {
+            if (!_lastMovement.HasValue)
+            {
+                return false;
+            }
+
+            return DateTime.Now.Subtract(_lastMovement.Value) < TimeSpan.FromSeconds(10);
+        }
+
+        static void _trimOld(DirectoryInfo dir)
+        {
+            var fs = dir.GetFiles();
+            var dtNow = DateTime.Now;
+
+            
+
+            foreach (var file in fs)
+            {
+                var fn = file.Name.Replace(file.Extension, "");
+                var dt = new DateTime(Convert.ToInt64(fn));
+                if (dtNow.Subtract(dt) > TimeSpan.FromSeconds(10))
+                {
+                    file.Delete();
+                }
+            }
         }
 
         static private Image<Gray, Byte> _original = null;
@@ -198,7 +339,7 @@ namespace MotionDetector
                     CvInvoke.PutText(frame, b.Id.ToString(), new Point((int)Math.Round(b.Centroid.X), (int)Math.Round(b.Centroid.Y)), FontFace.HersheyPlain, 1.0, new MCvScalar(255.0, 255.0, 255.0));
                 }
 
-               File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
+             //  File.WriteAllBytes(@"C:\Temp\imagery\aaframes.jpg", frame.ToJpegData(95));
                // File.WriteAllBytes(@"C:\Temp\imagery\aablur.jpg", smoothedFrame.ToImage<Gray, byte>().ToJpegData(95));
 
                 return _tracker.Count > 0;
@@ -272,15 +413,20 @@ namespace MotionDetector
         {
             Console.WriteLine("Hello World!");
 
+            foreach (var process in Process.GetProcessesByName("ffmpeg"))
+            {
+                process.Kill();
+            }
+
 
             while (true)
             {
                 var pi = new ProcessStartInfo();
 
-                pi.FileName = @"C:\utils\ffmpeg-20170223-dcd3418-win64-static\ffmpeg-20170223-dcd3418-win64-static\bin\ffmpeg.exe";
+                pi.FileName = ff;
 
                 var arguments =
-                    $"-y -i {address} -vf drawtext=\"fontfile=C\\\\:/Windows/Fonts/arial.ttf:text='%{{localtime\\:%X}}:fontcolor=yellow'\" -r 1/2 \"{fn}\\out%05d.bmp\"";
+                    $"-y -i {address} -vf drawtext=\"fontfile=C\\\\:/Windows/Fonts/arial.ttf:text='%{{localtime\\:%X}}:fontcolor=yellow'\" -r 1/1 \"{fn}\\out%05d.jpg\"";
 
                 pi.Arguments = arguments;
                 pi.WorkingDirectory = Directory.GetCurrentDirectory();
