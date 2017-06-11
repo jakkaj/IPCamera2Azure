@@ -27,6 +27,7 @@ namespace MotionDetector
         private static Process _process;
 
         private static DateTime? _lastMovement;
+        private static DateTime _currentDate;
 
         const string ff = @"C:\utils\ffmpeg-20170223-dcd3418-win64-static\ffmpeg-20170223-dcd3418-win64-static\bin\ffmpeg.exe";
         private static string _code = null;
@@ -92,7 +93,7 @@ namespace MotionDetector
 
             var d = new DirectoryInfo(fn);
 
-            bool isTriggered = false;
+            DateTime? triggeredDate = null;
 
             while (true)
             {
@@ -101,12 +102,17 @@ namespace MotionDetector
 
                 foreach (var f in files)
                 {
+                    var datePictureTaken = File.GetCreationTime(f.FullName);
+                    _currentDate = datePictureTaken;
+
                     if (_doDetect(f.FullName))
                     {
-                        isTriggered = true;
-                        _lastMovement = DateTime.Now;
+                        if (triggeredDate == null)
+                        {
+                            triggeredDate = _currentDate;
+                        }
 
-                        var datePictureTaken = File.GetCreationTime(f.FullName);
+                        _lastMovement = _currentDate;
                         
                         using (var imgFull = new Image<Bgr, Byte>(f.FullName))
                         {
@@ -121,18 +127,18 @@ namespace MotionDetector
                     }
 
                     var _movementWindow = _lastMovement != null ?
-                        DateTime.Now.Subtract(_lastMovement.Value) : TimeSpan.Zero;
+                        _currentDate.Subtract(_lastMovement.Value) : TimeSpan.Zero;
 
-                    if (isTriggered)
+                    if (triggeredDate.HasValue)
                     {
                         Debug.WriteLine($"Movement was {_movementWindow.TotalSeconds} ago");
                     }
 
-                    if (isTriggered && _movementWindow > TimeSpan.FromSeconds(31))
+                    if (triggeredDate.HasValue && _movementWindow > TimeSpan.FromSeconds(5))
                     {
                         //movement is now old, collect and transmit the movement.  
-                        await _buildAndTransmit();
-                        isTriggered = false;
+                        await _buildAndTransmit(triggeredDate.Value);
+                        triggeredDate = null;
                     }
 
 
@@ -153,7 +159,7 @@ namespace MotionDetector
 
         }
 
-        static async Task _buildAndTransmit()
+        static async Task _buildAndTransmit(DateTime eventStart)
         {
             var timeWindowDirecgtory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), "videoWindow"));
             var stageDirectory = new DirectoryInfo(Path.Combine(Path.GetTempPath(), "videoWindowStage"));
@@ -167,6 +173,11 @@ namespace MotionDetector
 
             foreach (var f in timeWindowDirecgtory.GetFiles())
             {
+                if (f.CreationTime < eventStart.Subtract(TimeSpan.FromSeconds(3)))
+                {
+                    continue;
+                }
+
                 var target = Path.Combine(stageDirectory.FullName,
                     $"img{count:D5}.jpg");
                
@@ -204,7 +215,9 @@ namespace MotionDetector
             var d = File.ReadAllBytes(fVideo);
 
             var func =
-                $"https://jordocore.azurewebsites.net/api/MovementUploader?code={_code}&SourceName={_name}&Ext=mp4&Ticks={DateTime.Now.Ticks}";
+                $"https://jordocore.azurewebsites.net/api/MovementUploader?code={_code}&SourceName={_name}&Ext=mp4&Ticks={_currentDate.Ticks}";
+
+            Debug.WriteLine($">>> Transmit {func}");
 
             await func.Post(d);
 
@@ -241,13 +254,13 @@ namespace MotionDetector
                 return false;
             }
 
-            return DateTime.Now.Subtract(_lastMovement.Value) < TimeSpan.FromSeconds(30);
+            return _currentDate.Subtract(_lastMovement.Value) < TimeSpan.FromSeconds(30);
         }
 
         static void _trimOld(DirectoryInfo dir)
         {
             var fs = dir.GetFiles();
-            var dtNow = DateTime.Now;
+            var dtNow = _currentDate;
 
             
 
