@@ -35,6 +35,10 @@ class ripper{
 										
 	    console.log('Spawning ffmpeg ' + args.join(' '));
 
+        ffmpeg.stdout.on('data', (data) => {
+            console.log(data.toString());
+        });
+
         ffmpeg.on('error', (err)=>{
             console.log("Error");
             console.log(err);
