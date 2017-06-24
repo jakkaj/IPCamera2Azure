@@ -44,14 +44,14 @@ class ripper{
                 var dt = new Date();
                 var ticks = ((dt.getTime() * 10000) + 621355968000000000);
 
-            var func =
-            `https://jordocore.azurewebsites.net/api/MovementUploader?code=${this._code}&SourceName=${name}&Ext=mp4&Ticks=${ticks}`;
-            console.log(`Posting to ${func}`);
-            fs.createReadStream(vidFile).pipe(request.post(func)).on('end', ()=>{
-                del(vidFile, {force:true});
-                del(tmpFile.name, {force:true});
-                process.exit(0);
-            });
+                var func =
+                `https://jordocore.azurewebsites.net/api/MovementUploader?code=${this._code}&SourceName=${name}&Ext=mp4&Ticks=${ticks}`;
+                console.log(`Posting to ${func}`);
+                fs.createReadStream(vidFile).pipe(request.post(func)).on('end', ()=>{
+                    del(vidFile, {force:true});
+                    del(tmpFile.name, {force:true});
+                    process.exit(0);
+                });
             });
 
             
