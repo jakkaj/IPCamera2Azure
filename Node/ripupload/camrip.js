@@ -39,6 +39,10 @@ class ripper{
             console.log(data.toString());
         });
 
+        ffmpeg.stderr.on('data', (data) => {
+            console.log(data.toString());
+        });
+
         ffmpeg.on('error', (err)=>{
             console.log("Error");
             console.log(err);
