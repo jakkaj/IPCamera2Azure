@@ -35,6 +35,12 @@ class ripper{
 										
 	    console.log('Spawning ffmpeg ' + args.join(' '));
 
+        ffmpeg.on('error', (err)=>{
+            console.log("Error");
+            console.log(err);
+            process.exit(1);
+        })
+
 	    ffmpeg.on('exit', (code)=>{
             console.log(code);
             console.log(vidFile);
